@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hydra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: hydra
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hydra"]
+      interval: 2s
+      retries: 15
+
+  hydra-migrate:
+    image: oryd/hydra:v2.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: migrate sql --yes ${DSN}
+    restart: no
+
+  hydra:
+    image: oryd/hydra:v2.2
+    command: serve all --dev
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4444:4444"
+      - "4445:4445"
+    networks:
+      default:
+        aliases:
+          - auth.moneo.lh
+    environment:
+      DSN: ${DSN}
+      URLS_SELF_ISSUER: http://auth.moneo.lh:4444
+      URLS_LOGIN: http://login.moneo.lh:8000/login
+      URLS_CONSENT: http://login.moneo.lh:8000/consent
+      SECRETS_SYSTEM: ${HYDRA_SYSTEM_SECRET}
+      SECRETS_COOKIE: ${HYDRA_COOKIE_SECRET}
+
+  saslauthd:
+    build: ./saslauthd
+    volumes:
+      - saslauthd_socket:/var/run/saslauthd
+    healthcheck:
+      test: ["CMD", "test", "-S", "/var/run/saslauthd/mux"]
+      interval: 1s
+      retries: 15
+
+  whoami:
+    image: traefik/whoami
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    depends_on:
+      - hydra
+    ports:
+      - "4180:4180"
+    environment:
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+    command:
+      - --provider=oidc
+      - --oidc-issuer-url=http://auth.moneo.lh:4444
+      - --cookie-secure=false
+      - --upstream=http://whoami:80
+      - --redirect-url=http://localhost:4180/oauth2/callback
+      - --email-domain=*
+      - --scope=openid profile email
+      - --http-address=0.0.0.0:4180
+
+  login-provider:
+    build: ..
+    depends_on:
+      hydra:
+        condition: service_started
+      saslauthd:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      default:
+        aliases:
+          - login.moneo.lh
+    environment:
+      HYDRA_ADMIN_URL: http://hydra:4445
+      EMAIL_DOMAIN: ${EMAIL_DOMAIN}
+      SASLAUTHD_SOCKET: /var/run/saslauthd/mux
+    volumes:
+      - saslauthd_socket:/var/run/saslauthd
+
+volumes:
+  saslauthd_socket:
