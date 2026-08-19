@@ -87,7 +87,7 @@ services:
     environment:
       HYDRA_ADMIN_URL: http://hydra:4445
       EMAIL_DOMAIN: ${EMAIL_DOMAIN}
-      SASLAUTHD_SOCKET: /var/run/saslauthd/mux
+      AUTH_SOCKET: /var/run/saslauthd/mux
     volumes:
       - saslauthd_socket:/var/run/saslauthd
 

@@ -4,11 +4,12 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from hydra_sasl import auth, claims, hydra
+from hydra_sasl import backends, claims, hydra
 from hydra_sasl.settings import settings
 
 app = FastAPI(title="hydra-sasl")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+backend = backends.create(settings)
 
 
 @app.get("/health")
@@ -38,7 +39,7 @@ async def login_post(
     username: str = Form(...),
     password: str = Form(...),
 ):
-    ok = await auth.authenticate(settings.saslauthd_socket, username, password, settings.saslauthd_service)
+    ok = await backend.authenticate(username, password)
 
     if not ok:
         return templates.TemplateResponse(

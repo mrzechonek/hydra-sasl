@@ -6,10 +6,11 @@ class Settings(BaseSettings):
 
     hydra_admin_url: str
     email_domain: str
-    login_title: str
+    login_title: str = ""
     login_bg_url: str = ""
-    saslauthd_socket: str = "/var/run/saslauthd/mux"
-    saslauthd_service: str = "login"
+    auth_backend: str = "saslauthd"
+    auth_socket: str = "/var/run/saslauthd/mux"
+    auth_service: str = "login"
 
 
 settings = Settings()

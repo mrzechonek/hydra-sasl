@@ -1,8 +1,9 @@
 # hydra-sasl
 
 Login provider for [Ory Hydra](https://github.com/ory/hydra) that authenticates
-users via [saslauthd](https://www.cyrusimap.org/sasl/sasl/components.html#saslauthd),
-backed by Linux system accounts.
+users against an existing authentication daemon — either
+[saslauthd](https://www.cyrusimap.org/sasl/sasl/components.html#saslauthd) or
+[Dovecot](https://www.dovecot.org/) — typically backed by Linux system accounts.
 
 Self-hosted services that support OIDC (Immich, Jellyfin, Nextcloud, …) can use this
 to authenticate against the Linux users already on your server, with no separate user
@@ -20,7 +21,7 @@ Ory Hydra  (OAuth2/OIDC, ports 4444/4445)
 hydra-sasl  (FastAPI, port 8000)
   │  username + password
   ▼
-saslauthd  (unix socket)
+saslauthd or Dovecot auth  (unix socket)
   │
   ▼
 /etc/shadow
@@ -28,13 +29,15 @@ saslauthd  (unix socket)
 
 Hydra handles the OAuth2/OIDC protocol and never sees credentials. It redirects the
 browser to hydra-sasl with a signed challenge. hydra-sasl shows a login form,
-authenticates via saslauthd, then accepts or rejects the challenge through Hydra's
-admin API. Consent is granted automatically for all requested scopes.
+authenticates against the configured backend, then accepts or rejects the challenge
+through Hydra's admin API. Consent is granted automatically for all requested scopes.
 
 ## Requirements
 
 - Ory Hydra v2.2+ with its admin API reachable from this service
-- `saslauthd` running and its socket accessible to this process (see below)
+- one authentication backend, with its socket accessible to this process (see below):
+  - `saslauthd` (default), or
+  - `dovecot`, talking the Dovecot auth protocol with the PLAIN mechanism
 
 ## Configuration
 
@@ -44,8 +47,9 @@ All configuration is via environment variables.
 |---|---|---|---|
 | `HYDRA_ADMIN_URL` | yes | — | Hydra admin API base URL, e.g. `http://hydra:4445` |
 | `EMAIL_DOMAIN` | yes | — | Domain for derived email claims, e.g. `example.com` |
-| `SASLAUTHD_SOCKET` | no | `/var/run/saslauthd/mux` | Path to the saslauthd socket |
-| `SASLAUTHD_SERVICE` | no | `login` | PAM service name passed to saslauthd |
+| `AUTH_BACKEND` | no | `saslauthd` | Authentication backend: `saslauthd` or `dovecot` |
+| `AUTH_SOCKET` | no | `/var/run/saslauthd/mux` | Path to the backend socket |
+| `AUTH_SERVICE` | no | `login` | Service name passed to the backend (a PAM service name for saslauthd) |
 | `LOGIN_TITLE` | yes | — | Site name shown on the login page |
 | `LOGIN_BG_URL` | no | — | Background image URL for the login page |
 
@@ -74,13 +78,41 @@ URLS_LOGIN=http://hydra-sasl:8000/login
 URLS_CONSENT=http://hydra-sasl:8000/consent
 ```
 
-## saslauthd socket access
+## Backend socket access
 
-The process must be able to connect to the saslauthd socket. The socket is owned by
-the `sasl` group (`srwxrwx---`), so the process user needs to be in that group.
+The process must be able to connect to the backend socket. When running in a
+container with the socket mounted from the host, the owning GID inside the container
+must match the host's.
 
-When running in a container with the socket mounted from the host, the `sasl` GID
-inside the container must match the host's `sasl` GID.
+### saslauthd
+
+The socket is owned by the `sasl` group (`srwxrwx---`), so the process user needs to
+be in that group.
+
+### Dovecot
+
+The Dovecot backend expects a **login socket** by default (e.g., `/var/run/dovecot/login`).
+This is the standard socket for authentication and requires no additional configuration.
+
+If you need to use a non-standard socket (e.g., `auth-client`), add a listener in Dovecot:
+
+```
+service auth {
+  unix_listener auth-client {
+    mode = 0660
+    group = <group of this process>
+  }
+}
+```
+
+The listener name matters. Dovecot derives the socket type from the suffix after the
+last `-`, and the names `master`, `userdb`, and `token` select sockets speaking a
+different protocol. These are **not supported** by this backend. The socket must also
+be accessible to the process.
+
+`PLAIN` must be among the enabled `auth_mechanisms` (it is by default). Dovecot's
+`disable_plaintext_auth` does not apply: it is enforced by the login services, not by
+the auth process.
 
 ## OIDC claims
 
