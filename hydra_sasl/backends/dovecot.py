@@ -51,10 +51,13 @@ class Dovecot:
                     break
 
             # service= rather than protocol=: the only form 2.3 accepts and
-            # still honoured by 2.4. The username travels inside resp=, so no
-            # field on this line is user-controlled and needs tab-escaping.
+            # still honoured by 2.4. secured (bare, rather than 2.4's
+            # secured=tls) marks the request as coming over a trusted channel,
+            # without which the auth process refuses PLAIN under
+            # disable_plaintext_auth=yes. The username travels inside resp=, so
+            # no field on this line is user-controlled and needs tab-escaping.
             writer.write(
-                f"AUTH\t1\tPLAIN\tservice={self.service}\tresp={resp}\n".encode()
+                f"AUTH\t1\tPLAIN\tservice={self.service}\tsecured\tresp={resp}\n".encode()
             )
             reply = await reader.readline()
             return reply.startswith(b"OK\t")

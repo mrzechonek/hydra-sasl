@@ -110,9 +110,9 @@ last `-`, and the names `master`, `userdb`, and `token` select sockets speaking 
 different protocol. These are **not supported** by this backend. The socket must also
 be accessible to the process.
 
-`PLAIN` must be among the enabled `auth_mechanisms` (it is by default). Dovecot's
-`disable_plaintext_auth` does not apply: it is enforced by the login services, not by
-the auth process.
+`PLAIN` must be among the enabled `auth_mechanisms` (it is by default). The backend
+marks every request as `secured`, so `disable_plaintext_auth = yes` does not reject it.
+Terminating TLS in front of this service is therefore the operator's responsibility.
 
 ## OIDC claims
 
